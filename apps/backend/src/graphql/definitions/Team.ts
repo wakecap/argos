@@ -28,6 +28,7 @@ import {
   UserEmail,
 } from "@/database/models";
 import { createAccount } from "@/database/services/account";
+import { getSelfHostedPlan } from "@/database/services/self-hosted-plan";
 import { createTeamAccount } from "@/database/services/team";
 import {
   addTeamDomain,
@@ -59,6 +60,7 @@ import {
   getStaticIpAddresses,
 } from "@/github/static-ip";
 import {
+  checkIsStripeConfigured,
   createArgosSubscriptionFromStripe,
   createStripeCheckoutSession,
   getCustomerIdFromUserAccount,
@@ -1009,11 +1011,6 @@ export const resolvers: IResolvers = {
         }
       }
 
-      const [hasSubscribedToTrial, plan] = await Promise.all([
-        auth.account.$checkHasSubscribedToTrial(),
-        getStripeProPlanOrThrow(),
-      ]);
-
       const teamUrl = new URL(`/${teamAccount.slug}`, config.get("server.url"))
         .href;
       // A user who has not been through the welcome page yet lands there first:
@@ -1022,6 +1019,20 @@ export const resolvers: IResolvers = {
       const doneUrl = auth.user.signupSourceAskedAt
         ? teamUrl
         : getWelcomeUrl({ teamSlug: teamAccount.slug });
+
+      // Self-hosted, with no Stripe account: skip checkout and the trial.
+      if (!checkIsStripeConfigured()) {
+        const selfHostedPlan = await getSelfHostedPlan();
+        await teamAccount
+          .$query()
+          .patchAndFetch({ forcedPlanId: selfHostedPlan.id });
+        return { team: teamAccount, redirectUrl: doneUrl };
+      }
+
+      const [hasSubscribedToTrial, plan] = await Promise.all([
+        auth.account.$checkHasSubscribedToTrial(),
+        getStripeProPlanOrThrow(),
+      ]);
 
       const redirectToStripe = async ({ trial }: { trial: boolean }) => {
         const session = await createStripeCheckoutSession({

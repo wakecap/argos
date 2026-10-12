@@ -111,11 +111,13 @@ export function createConfig() {
         doc: "Specify if the server is using https or not.",
         format: Boolean,
         default: false,
+        env: "SERVER_SECURE",
       },
       httpsRedirect: {
         doc: "Specify if an https redirection should occur.",
         format: Boolean,
         default: false,
+        env: "SERVER_HTTPS_REDIRECT",
       },
       wildcardDomains: {
         doc: "Domains that matches api and app.",
@@ -270,6 +272,18 @@ export function createConfig() {
         format: String,
         default: "https://files.argos-ci.com/development/",
         env: "S3_PUBLIC_IMAGE_BASE_URL",
+      },
+      endpoint: {
+        doc: "Endpoint of an S3-compatible store (MinIO, Garage…) to use instead of AWS S3. Empty uses AWS.",
+        format: String,
+        default: "",
+        env: "S3_ENDPOINT",
+      },
+      forcePathStyle: {
+        doc: "Address buckets as `<endpoint>/<bucket>` instead of `<bucket>.<endpoint>`. Most S3-compatible stores need it.",
+        format: Boolean,
+        default: false,
+        env: "S3_FORCE_PATH_STYLE",
       },
     },
     github: {
