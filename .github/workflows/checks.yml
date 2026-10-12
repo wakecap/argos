@@ -3,7 +3,8 @@ name: Checks
 # Our tests, in place of upstream's CI workflow, which is disabled on this
 # fork. The jobs are upstream's, with two differences:
 # - S3 is a throwaway MinIO (.github/actions/start-s3) instead of the bucket in
-#   Argos's own AWS account.
+#   Argos's own AWS account, and DynamoDB (the Deployments feature) is
+#   DynamoDB Local instead of tables in that account.
 # - Nothing is uploaded to argos-ci.com: upstream uploads screenshots of its own
 #   UI there whenever CI is set, so the test commands run with CI unset and
 #   pass Playwright the two options CI would turn on.
@@ -87,8 +88,13 @@ jobs:
       NODE_ENV: test
       TZ: UTC
       AWS_ENDPOINT_URL_S3: http://127.0.0.1:9000
+      DYNAMODB_ENDPOINT: http://127.0.0.1:8000
 
     services:
+      dynamodb:
+        image: amazon/dynamodb-local:3.3.1
+        ports:
+          - 8000:8000
       redis:
         image: redis:6-alpine
         ports:
@@ -111,6 +117,29 @@ jobs:
 
       - name: Start S3
         uses: ./.github/actions/start-s3
+
+      # The tables upstream defines in infra/lib/deployment-stack.ts, under the
+      # `development` stage the tests run with. The app's DynamoDB client signs
+      # for us-east-1, and DynamoDB Local keeps tables per region and key.
+      - name: Create the DynamoDB tables
+        run: |
+          set -euo pipefail
+          ddb() { aws dynamodb --endpoint-url "$DYNAMODB_ENDPOINT" --region us-east-1 "$@"; }
+          for _ in $(seq 1 30); do
+            if ddb list-tables > /dev/null 2>&1; then
+              break
+            fi
+            sleep 1
+          done
+          ddb create-table --table-name development_files \
+            --attribute-definitions AttributeName=content_hash,AttributeType=S \
+            --key-schema AttributeName=content_hash,KeyType=HASH \
+            --billing-mode PAY_PER_REQUEST > /dev/null
+          ddb create-table --table-name development_deployment_files \
+            --attribute-definitions AttributeName=deployment_id,AttributeType=S AttributeName=path,AttributeType=S \
+            --key-schema AttributeName=deployment_id,KeyType=HASH AttributeName=path,KeyType=RANGE \
+            --billing-mode PAY_PER_REQUEST > /dev/null
+          ddb list-tables --output text
 
       - name: Setup Node.js & install dependencies
         uses: ./.github/actions/setup-deps
