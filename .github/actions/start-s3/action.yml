@@ -1,0 +1,65 @@
+name: "Start S3"
+description: >-
+  Runs a throwaway MinIO with the test bucket, standing in for the AWS S3
+  bucket upstream's tests use. Reads AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
+  and AWS_REGION from the environment.
+
+inputs:
+  network:
+    description: >-
+      Docker network to join, such as a job's services network, so a step
+      running in a container can reach it. Empty runs it on the host only.
+    required: false
+    default: ""
+  bucket:
+    description: Bucket to create; the test configuration's screenshots bucket.
+    required: false
+    default: argos-ci-test
+
+outputs:
+  endpoint:
+    description: >-
+      Endpoint URL by IP address. With an IP, the AWS SDK addresses the bucket
+      in the path, which is what MinIO expects.
+    value: ${{ steps.start.outputs.endpoint }}
+
+runs:
+  using: composite
+  steps:
+    - name: Start MinIO
+      id: start
+      shell: bash
+      env:
+        NETWORK: ${{ inputs.network }}
+        BUCKET: ${{ inputs.bucket }}
+        # MinIO no longer publishes images to Docker Hub; this is a community
+        # build of the same server, the one self-host/docker-compose.yml uses.
+        IMAGE: pgsty/minio:RELEASE.2026-08-04T00-00-00Z
+      run: |
+        set -euo pipefail
+
+        args=(-d --name minio -p 9000:9000
+          -e MINIO_ROOT_USER="$AWS_ACCESS_KEY_ID"
+          -e MINIO_ROOT_PASSWORD="$AWS_SECRET_ACCESS_KEY"
+          # The tests sign their requests for this region.
+          -e MINIO_SITE_REGION="$AWS_REGION")
+        if [ -n "$NETWORK" ]; then
+          args+=(--network "$NETWORK")
+        fi
+        docker run "${args[@]}" "$IMAGE" server /data
+
+        for _ in $(seq 1 30); do
+          if curl -fs http://127.0.0.1:9000/minio/health/live > /dev/null; then
+            break
+          fi
+          sleep 1
+        done
+
+        aws --endpoint-url http://127.0.0.1:9000 s3 mb "s3://$BUCKET"
+
+        if [ -n "$NETWORK" ]; then
+          ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' minio)
+        else
+          ip=127.0.0.1
+        fi
+        echo "endpoint=http://$ip:9000" >> "$GITHUB_OUTPUT"

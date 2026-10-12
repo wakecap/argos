@@ -9,10 +9,12 @@ export async function checkIfExists({ s3, ...other }: GetParams) {
     await get({ s3, ...other });
     return true;
   } catch (error) {
+    // A missing key is a 404 (`NoSuchKey`) when the caller may list the
+    // bucket, and a 403 (`AccessDenied`) when it may not.
     if (
       error instanceof Error &&
       "Code" in error &&
-      error.Code === "AccessDenied"
+      (error.Code === "AccessDenied" || error.Code === "NoSuchKey")
     ) {
       return false;
     }
