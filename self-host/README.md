@@ -159,58 +159,6 @@ Stripe, Sentry, Discord.
 
 ## AWS deployment (for DevOps)
 
-Argos is built to run on AWS, so each local piece has a managed equivalent:
-
-| Piece                                                            | Locally                           | On AWS                                                                                                                                       |
-| ---------------------------------------------------------------- | --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| Postgres **17 or newer** (`structure.sql` uses 17-only settings) | `postgres:18-alpine`              | RDS for PostgreSQL 17. SSL is switched on automatically for `*.amazonaws.com` hosts                                                          |
-| Redis 6                                                          | `redis:6-alpine`                  | ElastiCache for Redis                                                                                                                        |
-| RabbitMQ 4.2                                                     | `rabbitmq:4.2-alpine`             | Amazon MQ for RabbitMQ (`amqps://user:pass@host:5671`)                                                                                       |
-| Screenshot storage                                               | MinIO                             | A private S3 bucket. Give the tasks an IAM role with read and write on it, and drop `S3_ENDPOINT`, `S3_FORCE_PATH_STYLE` and the access keys |
-| Web (app and API)                                                | `web` service, port 4002          | ECS service behind an ALB that terminates TLS. Health check: `GET /health`                                                                   |
-| Worker (diffs, notifications)                                    | `worker` service                  | ECS service, no port. It does the image diffing, so give it the most CPU                                                                     |
-| Schema                                                           | Loaded by Postgres on first start | Once, by hand: `psql -f apps/backend/db/structure.sql`                                                                                       |
-| Migrations                                                       | `migrate` service                 | A one-off ECS task before each deploy: `cd apps/backend && npx knex migrate:latest`                                                          |
-
-**Image.** `docker build --target build -t argos .` from the repo root. The default target is an empty stage, so
-`--target build` is required. Commands:
-
-- web: `sh -c "cd apps/backend && exec ./bin/start.sh web"`
-- worker: `sh -c "cd apps/backend && exec ./bin/start.sh worker"`
-
-**Hostnames.** The app and the API are the same process, told apart by the first part of the hostname. Point both
-names at the same target group, for example `app.argos.wakecap.com` and `api.argos.wakecap.com`.
-
-**Who has to reach what:**
-
-- People's browsers: the app host, and the S3 bucket (screenshots load from short-lived signed S3 links).
-- CI (GitHub Actions): the API host, and the S3 bucket (uploads go straight to S3 through signed links).
-- GitHub: the API host, for webhooks (`/github/event-handler`).
-
-**S3 bucket CORS.** The review page fetches screenshots with JavaScript to diff them, so the bucket needs a CORS
-rule allowing `GET` from `https://app.argos.wakecap.com` with the `Cache-Control` request header.
-
-**Settings that differ from local** (the rest are in [.env.example](.env.example)):
-
-```
-SERVER_URL=https://app.argos.wakecap.com
-API_BASE_URL=https://api.argos.wakecap.com
-SERVER_SECURE=true
-SERVER_HTTPS_REDIRECT=true        # the ALB must send X-Forwarded-Proto
-SESSION_DOMAIN=argos.wakecap.com  # the parent of the app and api hosts: GitHub sign-in needs the cookie on both
-WEBAUTHN_RP_ID=app.argos.wakecap.com
-WEBAUTHN_ORIGINS=https://app.argos.wakecap.com
-DATABASE_URL=postgres://<user>:<password>@<rds host>:5432/argos
-REDIS_URL=rediss://<elasticache host>:6379
-AMQP_URL=amqps://<user>:<password>@<amazon mq host>:5671
-AWS_SCREENSHOTS_BUCKET=<bucket>
-S3_REGION=<region>
-S3_PUBLIC_IMAGE_BASE_URL=         # empty: signed S3 links, no image CDN
-ENCRYPTION_KEY=<64 hex characters> # secret; never change it once projects exist, or their tokens stop working
-SERVER_SESSION_SECRET=<random>     # secret
-TRACK_NPM_PACKAGE_VERSIONS=false  # optional: stops it asking npm whether a newer Argos SDK exists
-GITHUB_APP_ID=…                    # and the other GITHUB_* values from the production App (see GitHub App)
-```
-
-**Storage growth.** Expect tens of megabytes per full build (about 2,100 PNG screenshots per Wakecore build, which
-measured 27 MB in Visual Regression Tracker). Plan an S3 lifecycle rule for old builds.
+Everything needed to run it on AWS, and the GitHub Actions pipeline that deploys every merge to `main`, is in
+[aws-deployment.md](aws-deployment.md): the resources and their sizes, the settings and secrets, the first-time setup
+and the deploy role.
