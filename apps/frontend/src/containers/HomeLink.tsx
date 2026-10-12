@@ -2,6 +2,7 @@ import { useLocation, useParams } from "react-router";
 
 import { getAccountURL } from "@/pages/Account/AccountParams";
 import { HeadlessLink, HeadlessLinkProps } from "@/ui/Link";
+import { isSelfHosted } from "@/util/self-hosted";
 
 import { getLatestVisitedAccount } from "./AccountHistory";
 import { useAuth } from "./Auth";
@@ -20,7 +21,7 @@ export function HomeLink(props: Omit<HeadlessLinkProps, "to">) {
   return (
     <HeadlessLink
       href={
-        pathname === "/login" || pathname === "/signup"
+        !isSelfHosted && (pathname === "/login" || pathname === "/signup")
           ? "https://argos-ci.com"
           : getAccountURL({ accountSlug })
       }

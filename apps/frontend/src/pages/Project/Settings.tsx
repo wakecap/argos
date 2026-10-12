@@ -38,6 +38,7 @@ import {
 import { Nav, NavLink, NavList, NavListItem } from "@/ui/Nav";
 import { PageLoader } from "@/ui/PageLoader";
 import { useScrollToHash } from "@/ui/useScrollToHash";
+import { isSelfHosted } from "@/util/self-hosted";
 
 import { useProjectOutletContext } from "./ProjectOutletContext";
 import { getProjectURL, useProjectParams } from "./ProjectParams";
@@ -199,7 +200,8 @@ function PageContent() {
     {
       name: "Deployments",
       slug: "deployments",
-      element: hasAdminPermission && (
+      // Deployments need the DynamoDB table and CDN a self-hosted install lacks.
+      element: hasAdminPermission && !isSelfHosted && (
         <ProjectDeployments project={project} isTeam={isTeam} />
       ),
     },

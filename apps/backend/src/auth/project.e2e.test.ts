@@ -1,5 +1,6 @@
 import { test as base, beforeEach, describe, expect, vi } from "vitest";
 
+import config from "@/config";
 import type { Project as ProjectModel } from "@/database/models";
 import { Project } from "@/database/models";
 import { factory, setupDatabase } from "@/database/testing";
@@ -116,7 +117,7 @@ describe("getAuthProjectPayloadFromBearerToken", () => {
       getAuthProjectPayloadFromBearerToken("tokenless-bearer"),
     ).rejects.toMatchObject({
       statusCode: 401,
-      message: `Project not found. Ensure a project exists in Argos (https://app.argos-ci.com) and restart your test after setup. Persisting issue? Consider adding 'ARGOS_TOKEN' to your CI environment variables. (token: "tokenless-bearer").`,
+      message: `Project not found. Ensure a project exists in Argos (${config.get("server.url")}) and restart your test after setup. Persisting issue? Consider adding 'ARGOS_TOKEN' to your CI environment variables. (token: "tokenless-bearer").`,
     });
   });
 

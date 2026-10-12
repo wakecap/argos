@@ -39,4 +39,17 @@ export interface ClientConfig {
     /** Whether this install can provision custom domains at all. */
     customDomains: boolean;
   };
+  /**
+   * A self-hosted install hides billing, plans, upsells and Argos's community
+   * links, and offers only the optional services it has configured.
+   */
+  selfHosted: {
+    enabled: boolean;
+    configured: {
+      google: boolean;
+      gitlab: boolean;
+      slack: boolean;
+      githubLight: boolean;
+    };
+  };
 }

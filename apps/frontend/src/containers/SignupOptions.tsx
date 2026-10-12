@@ -19,6 +19,7 @@ import { FormRootToastError } from "@/ui/FormRootError";
 import { FormSubmit } from "@/ui/FormSubmit";
 import { FormTextInput } from "@/ui/FormTextInput";
 import { LinkStyleButton } from "@/ui/Link";
+import { checkIsServiceOffered } from "@/util/self-hosted";
 
 import { AuthWithEmail } from "./AuthWithEmail";
 import { lastLoginMethodAtom } from "./LastLoginMethod";
@@ -149,14 +150,16 @@ function ProvidersScreen(props: {
   const setLastLoginMethod = useSetAtom(lastLoginMethodAtom);
   return (
     <div className="flex flex-col gap-4">
-      <GoogleLoginButton
-        redirect={redirect}
-        size="large"
-        className="w-full justify-center"
-        onClick={() => setLastLoginMethod("google")}
-      >
-        Continue with Google
-      </GoogleLoginButton>
+      {checkIsServiceOffered("google") ? (
+        <GoogleLoginButton
+          redirect={redirect}
+          size="large"
+          className="w-full justify-center"
+          onClick={() => setLastLoginMethod("google")}
+        >
+          Continue with Google
+        </GoogleLoginButton>
+      ) : null}
       <GitHubLoginButton
         redirect={redirect}
         size="large"
@@ -165,14 +168,16 @@ function ProvidersScreen(props: {
       >
         Continue with GitHub
       </GitHubLoginButton>
-      <GitLabLoginButton
-        redirect={redirect}
-        size="large"
-        className="w-full justify-center"
-        onClick={() => setLastLoginMethod("gitlab")}
-      >
-        Continue with GitLab
-      </GitLabLoginButton>
+      {checkIsServiceOffered("gitlab") ? (
+        <GitLabLoginButton
+          redirect={redirect}
+          size="large"
+          className="w-full justify-center"
+          onClick={() => setLastLoginMethod("gitlab")}
+        >
+          Continue with GitLab
+        </GitLabLoginButton>
+      ) : null}
       <LinkStyleButton
         className="mt-2 w-full text-center"
         onClick={onContinueWithEmail}

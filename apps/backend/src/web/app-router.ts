@@ -86,6 +86,15 @@ export const installAppRouter = async (app: express.Application) => {
       baseDomain: config.get("deployments.baseDomain"),
       customDomains: checkIsCustomDomainsConfigured(),
     },
+    selfHosted: {
+      enabled: config.get("selfHosted"),
+      configured: {
+        google: Boolean(config.get("google.clientId")),
+        gitlab: Boolean(config.get("gitlab.appId")),
+        slack: Boolean(config.get("slack.clientId")),
+        githubLight: Boolean(config.get("githubLight.appId")),
+      },
+    },
   };
 
   // `<` is escaped so a config value can never close the inlined <script>.

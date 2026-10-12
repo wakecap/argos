@@ -22,6 +22,7 @@ import { FormRootToastError } from "@/ui/FormRootError";
 import { FormSubmit } from "@/ui/FormSubmit";
 import { FormTextInput } from "@/ui/FormTextInput";
 import { Separator } from "@/ui/Separator";
+import { checkIsServiceOffered, isSelfHosted } from "@/util/self-hosted";
 
 import { AuthWithEmail } from "./AuthWithEmail";
 import { lastLoginMethodAtom, LastUsedIndicator } from "./LastLoginMethod";
@@ -56,17 +57,19 @@ export function LoginOptions(props: {
           />
           <Separator />
           <div className="flex flex-col gap-4">
-            <LastUsedIndicator isEnabled={lastLoginMethod === "google"}>
-              <GoogleLoginButton
-                redirect={redirect}
-                size="large"
-                className="w-full justify-center"
-                disabled={props.disabled}
-                onClick={() => setLastLoginMethod("google")}
-              >
-                Continue with Google
-              </GoogleLoginButton>
-            </LastUsedIndicator>
+            {checkIsServiceOffered("google") ? (
+              <LastUsedIndicator isEnabled={lastLoginMethod === "google"}>
+                <GoogleLoginButton
+                  redirect={redirect}
+                  size="large"
+                  className="w-full justify-center"
+                  disabled={props.disabled}
+                  onClick={() => setLastLoginMethod("google")}
+                >
+                  Continue with Google
+                </GoogleLoginButton>
+              </LastUsedIndicator>
+            ) : null}
             <LastUsedIndicator isEnabled={lastLoginMethod === "github"}>
               <GitHubLoginButton
                 redirect={redirect}
@@ -78,26 +81,30 @@ export function LoginOptions(props: {
                 Continue with GitHub
               </GitHubLoginButton>
             </LastUsedIndicator>
-            <LastUsedIndicator isEnabled={lastLoginMethod === "gitlab"}>
-              <GitLabLoginButton
-                redirect={redirect}
+            {checkIsServiceOffered("gitlab") ? (
+              <LastUsedIndicator isEnabled={lastLoginMethod === "gitlab"}>
+                <GitLabLoginButton
+                  redirect={redirect}
+                  size="large"
+                  className="w-full justify-center"
+                  disabled={props.disabled}
+                  onClick={() => setLastLoginMethod("gitlab")}
+                >
+                  Continue with GitLab
+                </GitLabLoginButton>
+              </LastUsedIndicator>
+            ) : null}
+            {isSelfHosted ? null : (
+              <Button
+                variant="secondary"
                 size="large"
                 className="w-full justify-center"
                 disabled={props.disabled}
-                onClick={() => setLastLoginMethod("gitlab")}
+                onClick={() => setScreen("saml")}
               >
-                Continue with GitLab
-              </GitLabLoginButton>
-            </LastUsedIndicator>
-            <Button
-              variant="secondary"
-              size="large"
-              className="w-full justify-center"
-              disabled={props.disabled}
-              onClick={() => setScreen("saml")}
-            >
-              Continue with SAML SSO
-            </Button>
+                Continue with SAML SSO
+              </Button>
+            )}
             {isPasskeySupported ? (
               <LastUsedIndicator isEnabled={lastLoginMethod === "passkey"}>
                 <PasskeyLoginButton

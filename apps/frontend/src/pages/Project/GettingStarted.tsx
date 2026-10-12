@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { useResolvedPath } from "react-router";
 
+import { config } from "@/config";
 import { BuildStatusChip } from "@/containers/BuildStatusChip";
 import { DocumentType, graphql } from "@/gql";
 import { LinkButton } from "@/ui/Button";
@@ -21,6 +22,7 @@ import { Loader } from "@/ui/Loader";
 import { PageLoader } from "@/ui/PageLoader";
 import { Pre } from "@/ui/Pre";
 import { Time } from "@/ui/Time";
+import { isSelfHosted } from "@/util/self-hosted";
 import { getItem, setItem } from "@/util/storage";
 
 import { AutomationLibraryIcon } from "../Build/metadata/automationLibrary/AutomationLibraryIcon";
@@ -78,6 +80,16 @@ type Framework = {
   getPrompt: (token: string) => string;
 };
 
+/**
+ * The variables a command needs to upload to Argos. A self-hosted install
+ * names its own API, or the SDK uploads to Argos's.
+ */
+function getArgosEnv(token: string) {
+  return isSelfHosted
+    ? `ARGOS_API_BASE_URL=${new URL("/v2/", config.api.baseUrl).href} ARGOS_TOKEN=${token}`
+    : `ARGOS_TOKEN=${token}`;
+}
+
 function getPromptIntro(name: string) {
   return `Set up Argos visual testing (https://argos-ci.com) in this project. It uses ${name}.`;
 }
@@ -101,7 +113,7 @@ const FRAMEWORKS: Framework[] = [
     ),
     docsURL: "https://argos-ci.com/docs/quickstart/playwright-quickstart",
     requiresCIEnv: true,
-    getCommand: (token) => `ARGOS_TOKEN=${token} CI=true npx playwright test`,
+    getCommand: (token) => `${getArgosEnv(token)} CI=true npx playwright test`,
     getPrompt(token) {
       return `${getPromptIntro(this.name)}
 
@@ -124,7 +136,7 @@ ${this.getCommand(token)}`;
     ),
     docsURL: "https://argos-ci.com/docs/quickstart/vitest-quickstart",
     requiresCIEnv: true,
-    getCommand: (token) => `ARGOS_TOKEN=${token} CI=true npx vitest run`,
+    getCommand: (token) => `${getArgosEnv(token)} CI=true npx vitest run`,
     getPrompt(token) {
       return `${getPromptIntro(this.name)}
 
@@ -148,7 +160,7 @@ ${this.getCommand(token)}`;
     docsURL: "https://argos-ci.com/docs/quickstart/storybook-quickstart",
     requiresCIEnv: true,
     getCommand: (token) =>
-      `ARGOS_TOKEN=${token} CI=true npx vitest run --project=storybook`,
+      `${getArgosEnv(token)} CI=true npx vitest run --project=storybook`,
     getPrompt(token) {
       return `${getPromptIntro("Storybook with the Vitest addon")}
 
@@ -171,7 +183,7 @@ ${this.getCommand(token)}`;
     ),
     docsURL: "https://argos-ci.com/docs/quickstart/cypress-quickstart",
     requiresCIEnv: true,
-    getCommand: (token) => `ARGOS_TOKEN=${token} CI=true npx cypress run`,
+    getCommand: (token) => `${getArgosEnv(token)} CI=true npx cypress run`,
     getPrompt(token) {
       return `${getPromptIntro(this.name)}
 
@@ -195,7 +207,7 @@ ${this.getCommand(token)}`;
     docsURL: "https://argos-ci.com/docs/quickstart/webdriverio-quickstart",
     requiresCIEnv: false,
     getCommand: (token) =>
-      `npm test\nARGOS_TOKEN=${token} npx argos upload ./screenshots/argos`,
+      `npm test\n${getArgosEnv(token)} npx argos upload ./screenshots/argos`,
     getPrompt(token) {
       return `${getPromptIntro(this.name)}
 
@@ -213,7 +225,7 @@ ${this.getCommand(token)}`;
     docsURL: "https://argos-ci.com/docs/quickstart/any-test-framework",
     requiresCIEnv: false,
     getCommand: (token) =>
-      `npm test\nARGOS_TOKEN=${token} npx argos upload ./screenshots`,
+      `npm test\n${getArgosEnv(token)} npx argos upload ./screenshots`,
     getPrompt(token) {
       return `Set up Argos visual testing (https://argos-ci.com) in this project with the Argos CLI: the tests capture screenshots into a folder and the CLI uploads that folder to Argos.
 

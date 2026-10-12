@@ -27,6 +27,7 @@ import {
   SubMenu,
   SubMenuContent,
 } from "@/ui/menu-kit";
+import { isSelfHosted } from "@/util/self-hosted";
 
 import { AccountAvatar } from "./AccountAvatar";
 import { useBuildHotkeysDialogState } from "./Build/BuildHotkeysDialogState";
@@ -147,20 +148,24 @@ function UserMenu(props: { account: AuthAccount }) {
         >
           Documentation
         </MenuItem>
-        <MenuItem
-          icon={<MessagesSquareIcon />}
-          href="https://argos-ci.com/discord"
-          target="_blank"
-        >
-          Discord community
-        </MenuItem>
-        <MenuItem
-          icon={<ActivitySquareIcon />}
-          href="https://argos.openstatus.dev"
-          target="_blank"
-        >
-          Status
-        </MenuItem>
+        {isSelfHosted ? null : (
+          <>
+            <MenuItem
+              icon={<MessagesSquareIcon />}
+              href="https://argos-ci.com/discord"
+              target="_blank"
+            >
+              Discord community
+            </MenuItem>
+            <MenuItem
+              icon={<ActivitySquareIcon />}
+              href="https://argos.openstatus.dev"
+              target="_blank"
+            >
+              Status
+            </MenuItem>
+          </>
+        )}
         <MenuSeparator />
         <MenuItem icon={<LogOutIcon />} onAction={() => logout()}>
           Logout
