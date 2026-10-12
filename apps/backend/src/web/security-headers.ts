@@ -77,6 +77,12 @@ export function createAppSecurityHeaders(options: {
           ...(cspReportUri
             ? { "report-to": ["csp-endpoint"], "report-uri": [cspReportUri] }
             : {}),
+          // Helmet adds this by default. On a plain-http install (a self-hosted
+          // one behind no TLS) it would send every asset and screenshot request
+          // to an https URL nothing answers; browsers only exempt `localhost`.
+          ...(config.get("server.secure")
+            ? {}
+            : { "upgrade-insecure-requests": null }),
         },
       },
       // Severs `window.opener` when a cross-origin page opens the app, closing
@@ -106,9 +112,20 @@ export function createAppSecurityHeaders(options: {
   ];
 }
 
-/** Virtual-hosted-style origin of the screenshots bucket. */
+/**
+ * Origin of the screenshots bucket: virtual-hosted-style on AWS, or the
+ * S3-compatible endpoint (MinIO…) when one is configured.
+ */
 function getScreenshotsBucketOrigin(): string {
-  return `https://${config.get("s3.screenshotsBucket")}.s3.${config.get("s3.region")}.amazonaws.com`;
+  const bucket = config.get("s3.screenshotsBucket");
+  const endpoint = config.get("s3.endpoint");
+  if (endpoint) {
+    const url = new URL(endpoint);
+    return config.get("s3.forcePathStyle")
+      ? url.origin
+      : `${url.protocol}//${bucket}.${url.host}`;
+  }
+  return `https://${bucket}.s3.${config.get("s3.region")}.amazonaws.com`;
 }
 
 /**

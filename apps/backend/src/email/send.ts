@@ -7,10 +7,10 @@ import logger from "@/logger";
 const production = config.get("env") === "production";
 const resendApiKey = config.get("resend.apiKey");
 
-// Resend throws if API key is missing
-// It is tolerable in test and development but not in production
-const resend =
-  resendApiKey || production ? new Resend(config.get("resend.apiKey")) : null;
+// Resend throws if API key is missing. Without one, emails are not sent: in
+// production that is logged on every send, so a self-hosted instance can run
+// before email is set up.
+const resend = resendApiKey ? new Resend(resendApiKey) : null;
 
 const defaultFrom = "Argos <contact@argos-ci.com>";
 
