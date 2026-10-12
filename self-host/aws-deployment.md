@@ -248,16 +248,21 @@ image. See the [open questions](#8-open-questions).
 
    The migrate task's subnets and security groups are read from the web service.
 
-**On our side,** before the first deploy:
+**On our side:**
 
-- **Turn on GitHub Actions for the fork** (it is off today), then **disable upstream's `Release` and `Infra`
-  workflows** in the Actions tab. `release.yml` deploys to Argos's own AWS account on every push to `main`, and
-  `infra.yml` their CDK stacks; both would only fail here. Disabling them in GitHub rather than deleting them keeps
-  upstream's files untouched, so merging upstream updates stays easy. Their `CI` workflow can stay as our checks.
-- **Limit the `production` environment to the `main` branch** (Settings → Environments → production → Deployment
-  branches).
-- **Fill in the placeholders** in `aws/production.env` once you've answered the open questions, then do the first
-  deploy together.
+- **Done:** GitHub Actions is on for the fork, and upstream's `CI`, `Release` and `Infra` workflows are disabled in
+  the Actions tab. `release.yml` deploys to Argos's own AWS account, `infra.yml` their CDK stacks, and `ci.yml` needs
+  their S3 bucket and an argos-ci.com project. Disabling them in GitHub rather than deleting them keeps upstream's
+  files untouched, so merging upstream updates stays easy. Our own [`checks.yml`](../.github/workflows/checks.yml)
+  runs the same tests, with MinIO and DynamoDB Local in place of their AWS account.
+- **Before the first deploy:**
+  - **Limit the `production` environment to the `main` branch** (Settings → Environments → production → Deployment
+    branches).
+  - **Fill in the placeholders** in `aws/production.env` once you've answered the open questions.
+  - **Switch deploys on:** set the repository variable `DEPLOY_ENABLED` to `true` (Settings → Secrets and variables
+    → Actions → Variables). Until then, a merge to `main` skips the deploy instead of failing it. It is a repository
+    variable, not a `production` one, because the workflow reads it before choosing the environment.
+  - Then run the first deploy together (Actions → Deploy → Run workflow).
 
 ## 7. Running it
 
