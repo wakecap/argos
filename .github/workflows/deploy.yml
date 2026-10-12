@@ -4,6 +4,11 @@ name: Deploy
 # migrations, then roll the web and worker services. The AWS side, and the
 # variables and secrets this reads, are in self-host/aws-deployment.md.
 #
+# Off until the repository variable DEPLOY_ENABLED is "true" (Settings →
+# Secrets and variables → Actions → Variables): until AWS is set up, a merge
+# skips the deploy rather than failing it. A repository variable, not an
+# environment one, because a job's `if` is read before its environment.
+#
 # To roll back, run this workflow by hand with an older commit: its image is
 # still in ECR, so nothing is rebuilt, and the migrations are skipped. The
 # database stays as it is: knex refuses to run with code older than the
@@ -40,7 +45,7 @@ env:
 jobs:
   build:
     # A fork of this repository has no AWS account to deploy to.
-    if: github.repository == 'wakecap/argos'
+    if: github.repository == 'wakecap/argos' && vars.DEPLOY_ENABLED == 'true'
     runs-on: ubuntu-latest
     environment: production
     timeout-minutes: 45
