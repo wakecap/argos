@@ -30,6 +30,15 @@ window.clientData ??= {
     server: { url: "" },
     api: { baseUrl: "" },
     deployments: { baseDomain: "", customDomains: false },
+    selfHosted: {
+      enabled: false,
+      configured: {
+        google: false,
+        gitlab: false,
+        slack: false,
+        githubLight: false,
+      },
+    },
   },
 };
 

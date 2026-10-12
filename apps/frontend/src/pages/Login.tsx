@@ -10,6 +10,7 @@ import { BrandShield } from "@/ui/BrandShield";
 import { Container } from "@/ui/Container";
 import { Link } from "@/ui/Link";
 import { redirectToSAMLLogin } from "@/util/saml";
+import { isSelfHosted } from "@/util/self-hosted";
 
 export function Component() {
   const auth = useAuth();
@@ -55,7 +56,14 @@ export function Component() {
               </p>
               <p>
                 Try again, if the error persists, please{" "}
-                <Link href="https://argos-ci.com/contact" target="_blank">
+                <Link
+                  href={
+                    isSelfHosted
+                      ? `mailto:${config.contactEmail}`
+                      : "https://argos-ci.com/contact"
+                  }
+                  target="_blank"
+                >
                   contact us
                 </Link>
                 .

@@ -4,6 +4,7 @@ import { useParams } from "react-router";
 import { BrandLogo } from "@/ui/BrandLogo";
 import { BreadcrumbSeparator } from "@/ui/Breadcrumb";
 import { Tooltip } from "@/ui/Tooltip";
+import { isSelfHosted } from "@/util/self-hosted";
 
 import { AccountBreadcrumbItem } from "./Breadcrumb/AccountBreadcrumb";
 import { ProjectBreadcrumbItem } from "./Breadcrumb/ProjectBreadcrumb";
@@ -50,14 +51,16 @@ export function Navbar() {
       </div>
 
       <div className="flex shrink-0 items-center gap-6">
-        <a
-          href="https://argos-ci.com/discord"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-low hover:text-default font-medium transition"
-        >
-          Help & Community
-        </a>
+        {isSelfHosted ? null : (
+          <a
+            href="https://argos-ci.com/discord"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-low hover:text-default font-medium transition"
+          >
+            Help & Community
+          </a>
+        )}
         <a
           href="https://argos-ci.com/docs"
           target="_blank"

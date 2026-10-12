@@ -23,6 +23,7 @@ import { List, ListRow } from "@/ui/List";
 import { Modal } from "@/ui/Modal";
 import { Time } from "@/ui/Time";
 import { toast } from "@/ui/Toaster";
+import { checkIsServiceOffered } from "@/util/self-hosted";
 
 import { EmailAuth } from "./providers/EmailAuth";
 import { GitHubAuth } from "./providers/GitHubAuth";
@@ -349,8 +350,12 @@ export function UserAuth(props: {
             <EmailAuth account={account} />
             <PasskeyAuth account={account} />
             <GitHubAuth account={account} />
-            <GitLabAuth account={account} />
-            <GoogleAuth account={account} />
+            {checkIsServiceOffered("gitlab") ? (
+              <GitLabAuth account={account} />
+            ) : null}
+            {checkIsServiceOffered("google") ? (
+              <GoogleAuth account={account} />
+            ) : null}
           </div>
         </CardBody>
       </Card>

@@ -10,6 +10,7 @@ import { FormCheckbox } from "@/ui/FormCheckbox";
 import { FormRootError } from "@/ui/FormRootError";
 import { FormSubmit } from "@/ui/FormSubmit";
 import { FormTextInput } from "@/ui/FormTextInput";
+import { isSelfHosted } from "@/util/self-hosted";
 
 const CreateTeamMutation = graphql(`
   mutation NewTeam_createTeam($name: String!, $autoJoinDomain: String) {
@@ -112,17 +113,19 @@ export function TeamNewForm(props: {
           description={`Anyone who verifies an @${autoJoinDomain} address will see this team when they sign up and can join without an invite. You can change this later in the team settings.`}
         />
       ) : null}
-      <p
-        className={clsx(
-          "text-default mt-4 text-sm font-medium",
-          !data && "invisible",
-        )}
-      >
-        {!data?.me?.hasSubscribedToTrial
-          ? "Continue will start a 14-day Pro plan trial"
-          : "You will be redirected to Stripe to complete the subscription"}
-        .
-      </p>
+      {isSelfHosted ? null : (
+        <p
+          className={clsx(
+            "text-default mt-4 text-sm font-medium",
+            !data && "invisible",
+          )}
+        >
+          {!data?.me?.hasSubscribedToTrial
+            ? "Continue will start a 14-day Pro plan trial"
+            : "You will be redirected to Stripe to complete the subscription"}
+          .
+        </p>
+      )}
       <div className="mt-8 flex items-center justify-end gap-4">
         <FormRootError control={form.control} />
         <FormSubmit control={form.control}>Continue</FormSubmit>

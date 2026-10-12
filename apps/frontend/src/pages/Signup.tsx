@@ -32,6 +32,7 @@ import { StandalonePage } from "@/ui/Layout";
 import { Link } from "@/ui/Link";
 import { useObjectRef } from "@/ui/useObjectRef";
 import { formatCurrency } from "@/util/intl";
+import { isSelfHosted } from "@/util/self-hosted";
 
 import mermaidImg from "./signup/mermaid.svg";
 import metaImg from "./signup/meta.svg";
@@ -68,25 +69,31 @@ function AccountTypeField<
         <RadioAccordion value="hobby">
           <div className="flex items-center justify-between gap-4">
             I’m working on personal projects
-            <Chip color="neutral" scale="sm">
-              Hobby
-            </Chip>
+            {isSelfHosted ? null : (
+              <Chip color="neutral" scale="sm">
+                Hobby
+              </Chip>
+            )}
           </div>
         </RadioAccordion>
         <RadioAccordion value="pro">
           <div className="flex items-center justify-between gap-4">
             I’m working on team projects
-            <Chip color="info" scale="sm">
-              Pro
-            </Chip>
+            {isSelfHosted ? null : (
+              <Chip color="info" scale="sm">
+                Pro
+              </Chip>
+            )}
           </div>
         </RadioAccordion>
         <RadioAccordion value="existing-team">
           <div className="flex items-center justify-between gap-4">
             I’m joining an existing team
-            <Chip color="success" scale="sm">
-              Member
-            </Chip>
+            {isSelfHosted ? null : (
+              <Chip color="success" scale="sm">
+                Member
+              </Chip>
+            )}
           </div>
         </RadioAccordion>
       </div>
@@ -175,7 +182,7 @@ function SignupPage() {
             assertNever(step);
         }
       })()}
-      <Customers />
+      {isSelfHosted ? null : <Customers />}
     </StandalonePage>
   );
 }
@@ -250,7 +257,7 @@ function FormStep(props: {
                 placeholder={isPro ? "Gryffindor" : "John Wick"}
                 autoComplete="off"
               />
-              {isPro && <ProPlanWarning />}
+              {isPro && !isSelfHosted && <ProPlanWarning />}
             </div>
           )}
           <FormSubmit
@@ -261,17 +268,19 @@ function FormStep(props: {
           >
             Continue
           </FormSubmit>
-          <p className="text-low text-center text-xs">
-            By joining, you agree to our{" "}
-            <Link href="https://argos-ci.com/terms" target="_blank">
-              Terms of Service
-            </Link>{" "}
-            and{" "}
-            <Link href="https://argos-ci.com/privacy" target="_blank">
-              Privacy Policy
-            </Link>
-            .
-          </p>
+          {isSelfHosted ? null : (
+            <p className="text-low text-center text-xs">
+              By joining, you agree to our{" "}
+              <Link href="https://argos-ci.com/terms" target="_blank">
+                Terms of Service
+              </Link>{" "}
+              and{" "}
+              <Link href="https://argos-ci.com/privacy" target="_blank">
+                Privacy Policy
+              </Link>
+              .
+            </p>
+          )}
         </div>
       </Form>
     </SignupCard>

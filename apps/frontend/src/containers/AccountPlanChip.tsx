@@ -3,6 +3,7 @@ import { assertNever } from "@argos/util/assertNever";
 import { DocumentType, graphql } from "@/gql";
 import { AccountSubscriptionStatus } from "@/gql/graphql";
 import { Chip, ChipColor } from "@/ui/Chip";
+import { isSelfHosted } from "@/util/self-hosted";
 
 const _AccountFragment = graphql(`
   fragment AccountPlanChip_Account on Account {
@@ -19,6 +20,10 @@ export const AccountPlanChip = (props: {
   className?: string;
 }) => {
   const { account } = props;
+  // A self-hosted install sells no plans, so there is nothing to tell apart.
+  if (isSelfHosted) {
+    return null;
+  }
   const chipProps: { color: ChipColor; children: string } | null = (() => {
     switch (account.subscriptionStatus) {
       case AccountSubscriptionStatus.Active:

@@ -76,6 +76,13 @@ export function createConfig() {
     contactEmail: {
       doc: "The contact email",
       default: "contact@argos-ci.com",
+      env: "CONTACT_EMAIL",
+    },
+    selfHosted: {
+      doc: "A self-hosted install: hides billing, plans, upsells and Argos's community links, and the sign-in options and integrations that are not configured.",
+      format: Boolean,
+      default: false,
+      env: "SELF_HOSTED",
     },
     trackNpmPackagesVersions: {
       doc: "Whether to track npm package versions.",

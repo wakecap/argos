@@ -10,6 +10,7 @@ import { DocumentType, graphql } from "@/gql";
 import { ProjectPermission } from "@/gql/graphql";
 import { PageLoader } from "@/ui/PageLoader";
 import { TabLink, TabLinkPanel, TabsLink, TabLinkList } from "@/ui/TabLink";
+import { isSelfHosted } from "@/util/self-hosted";
 
 import { NotFound } from "../NotFound";
 import type { ProjectOutletContext } from "./ProjectOutletContext";
@@ -56,7 +57,9 @@ function ProjectTabs(props: {
         {/* The ignore ledger is only meaningful while the feature is on; the
             page itself still explains itself if reached by a direct link. */}
         {ignoreEnabled && <TabLink href="ignored">Ignored</TabLink>}
-        {deploymentEnabled && <TabLink href="deployments">Deployments</TabLink>}
+        {deploymentEnabled && !isSelfHosted && (
+          <TabLink href="deployments">Deployments</TabLink>
+        )}
         {showAutomationsTab && (
           <TabLink href="automations">Automations</TabLink>
         )}

@@ -1,4 +1,5 @@
 import type { AuthProjectPayload } from "@/auth/payload";
+import config from "@/config";
 import { Project, UserAccessToken } from "@/database/models";
 import { encryptDeterministic } from "@/database/services/encrypt";
 import { boom } from "@/util/error";
@@ -54,7 +55,7 @@ export async function getAuthProjectPayloadFromBearerToken(bearer: string) {
   if (!project && strategy) {
     throw boom(
       401,
-      `Project not found. Ensure a project exists in Argos (https://app.argos-ci.com) and restart your test after setup. Persisting issue? Consider adding 'ARGOS_TOKEN' to your CI environment variables. (token: "${bearer}").`,
+      `Project not found. Ensure a project exists in Argos (${config.get("server.url")}) and restart your test after setup. Persisting issue? Consider adding 'ARGOS_TOKEN' to your CI environment variables. (token: "${bearer}").`,
     );
   }
 

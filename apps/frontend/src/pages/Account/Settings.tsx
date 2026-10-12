@@ -52,6 +52,7 @@ import {
 import { Nav, NavLink, NavList, NavListItem } from "@/ui/Nav";
 import { PageLoader } from "@/ui/PageLoader";
 import { useScrollToHash } from "@/ui/useScrollToHash";
+import { checkIsServiceOffered, isSelfHosted } from "@/util/self-hosted";
 
 import { useAccountContext } from ".";
 import { getAccountURL, useAccountParams } from "./AccountParams";
@@ -227,9 +228,13 @@ function PageContent() {
       slug: "billing",
       element: (
         <>
-          {hasAdminPermission && <PlanCard account={account} />}
-          {isTeam && hasAdminPermission && <TeamAddOns team={account} />}
-          {isTeam && account.subscription ? (
+          {hasAdminPermission && !isSelfHosted && (
+            <PlanCard account={account} />
+          )}
+          {isTeam && hasAdminPermission && !isSelfHosted && (
+            <TeamAddOns team={account} />
+          )}
+          {isTeam && account.subscription && !isSelfHosted ? (
             <TeamSpendManagement account={account} />
           ) : null}
         </>
@@ -250,7 +255,9 @@ function PageContent() {
           {isUser && hasAdminPermission && <UserAuth account={account} />}
           {isTeam && hasAdminPermission && <TeamDomains team={account} />}
           {isTeam && hasAdminPermission && <TeamGitHubSSO team={account} />}
-          {isTeam && hasAdminPermission && <TeamSAMLSSO team={account} />}
+          {isTeam && hasAdminPermission && !isSelfHosted && (
+            <TeamSAMLSSO team={account} />
+          )}
         </>
       ),
     },
@@ -290,11 +297,19 @@ function PageContent() {
       slug: "integrations",
       element: (
         <>
-          {isTeam && <TeamSlack account={account} />}
+          {isTeam && checkIsServiceOffered("slack") && (
+            <TeamSlack account={account} />
+          )}
           {isTeam && <TeamMsTeams account={account} />}
           {isTeam && <TeamDiscord account={account} />}
-          {isTeam && hasAdminPermission && <TeamGitHubLight team={account} />}
-          {isTeam && hasAdminPermission && <TeamStaticIp team={account} />}
+          {isTeam &&
+            hasAdminPermission &&
+            checkIsServiceOffered("githubLight") && (
+              <TeamGitHubLight team={account} />
+            )}
+          {isTeam && hasAdminPermission && !isSelfHosted && (
+            <TeamStaticIp team={account} />
+          )}
           {hasAdminPermission && <AccountGitLab account={account} />}
           {hasAdminPermission && originEnabled && (
             <AccountCursorOrigin account={account} />

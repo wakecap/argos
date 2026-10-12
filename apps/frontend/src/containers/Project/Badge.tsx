@@ -1,3 +1,4 @@
+import { config } from "@/config";
 import { DocumentType, graphql } from "@/gql";
 import {
   Card,
@@ -8,6 +9,7 @@ import {
 } from "@/ui/Card";
 import { Link } from "@/ui/Link";
 import { Pre } from "@/ui/Pre";
+import { isSelfHosted } from "@/util/self-hosted";
 
 const _ProjectFragment = graphql(`
   fragment ProjectBadge_Project on Project {
@@ -21,7 +23,8 @@ const BadgeBlock = (props: {
   url: string;
   projectSlug: string;
 }) => {
-  const refUrl = `https://app.argos-ci.com/${props.projectSlug}/reference`;
+  const refUrl = new URL(`/${props.projectSlug}/reference`, config.server.url)
+    .href;
   return (
     <div className="border-thin rounded-lg p-4">
       <h3 className="mb-4 font-semibold">{props.title}</h3>
@@ -65,16 +68,18 @@ export const ProjectBadge = (props: {
           />
         </div>
       </CardBody>
-      <CardFooter>
-        If your project is Open Source, read{" "}
-        <Link
-          href="https://argos-ci.com/docs/learn/billing-and-subscription/subscription/open-source"
-          target="_blank"
-        >
-          Argos documentation
-        </Link>{" "}
-        to learn more about Argos Open Source Sponsorship.
-      </CardFooter>
+      {isSelfHosted ? null : (
+        <CardFooter>
+          If your project is Open Source, read{" "}
+          <Link
+            href="https://argos-ci.com/docs/learn/billing-and-subscription/subscription/open-source"
+            target="_blank"
+          >
+            Argos documentation
+          </Link>{" "}
+          to learn more about Argos Open Source Sponsorship.
+        </CardFooter>
+      )}
     </Card>
   );
 };

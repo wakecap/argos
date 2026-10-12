@@ -18,6 +18,7 @@ import { Button, LinkButton } from "@/ui/Button";
 import { Container } from "@/ui/Container";
 import { StripePortalLink } from "@/ui/StripeLink";
 import { Time } from "@/ui/Time";
+import { isSelfHosted } from "@/util/self-hosted";
 
 const _PaymentBannerFragment = graphql(`
   fragment PaymentBanner_Account on Account {
@@ -117,7 +118,8 @@ export const PaymentBanner = memo(
     const { subscription, subscriptionStatus, permissions, stripeCustomerId } =
       account;
 
-    if (!data.me) {
+    // A self-hosted install sells no plans: no team is ever asked to pay.
+    if (!data.me || isSelfHosted) {
       return null;
     }
 
