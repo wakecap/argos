@@ -1,0 +1,245 @@
+name: Deploy
+
+# Ships wakecap/argos to production on AWS: build the image, run the database
+# migrations, then roll the web and worker services. The AWS side, and the
+# variables and secrets this reads, are in self-host/aws-deployment.md.
+#
+# To roll back, run this workflow by hand with an older commit: its image is
+# still in ECR, so nothing is rebuilt, and the migrations are skipped. The
+# database stays as it is: knex refuses to run with code older than the
+# migrations it has applied, and the older code normally works with the newer
+# schema. Undoing a migration is a manual step.
+
+permissions: {}
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Commit to deploy, for a rollback. Empty deploys the head of the branch.
+        required: false
+        type: string
+
+# One deploy at a time: a second one waits instead of cancelling the first
+# mid-rollout.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION }}
+  ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+  ECS_CLUSTER: ${{ vars.ECS_CLUSTER }}
+  ECS_TASK_ROLE_ARN: ${{ vars.ECS_TASK_ROLE_ARN }}
+  ECS_TASK_EXECUTION_ROLE_ARN: ${{ vars.ECS_TASK_EXECUTION_ROLE_ARN }}
+  SSM_PREFIX: ${{ vars.SSM_PREFIX }}
+
+jobs:
+  build:
+    # A fork of this repository has no AWS account to deploy to.
+    if: github.repository == 'wakecap/argos'
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 45
+    permissions:
+      id-token: write
+      contents: read
+    outputs:
+      image: ${{ steps.image.outputs.value }}
+      sha: ${{ steps.sha.outputs.value }}
+
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+
+      - name: Resolve the commit
+        id: sha
+        run: echo "value=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      # Before spending the build: a placeholder left in the settings would
+      # ship as a real value.
+      - name: Check the production settings
+        run: |
+          if grep -nE '^[A-Z0-9_]+=.*<[^>]*>' self-host/aws/production.env; then
+            echo "::error file=self-host/aws/production.env::Fill in the <placeholders> above."
+            exit 1
+          fi
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@d539f0932e70871a027e9d5a9d8fc38589180a64 # v2.1.6
+
+      - name: Name the image
+        id: image
+        env:
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          SHA: ${{ steps.sha.outputs.value }}
+        run: echo "value=$REGISTRY/$ECR_REPOSITORY:$SHA" >> "$GITHUB_OUTPUT"
+
+      # A rollback, or a re-run, deploys an image that is already there.
+      - name: Look for an existing image
+        id: existing
+        env:
+          SHA: ${{ steps.sha.outputs.value }}
+        run: |
+          if aws ecr describe-images --repository-name "$ECR_REPOSITORY" --image-ids imageTag="$SHA" > /dev/null 2>&1; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+            echo "Image $SHA is already in ECR, not rebuilding."
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Docker Buildx
+        if: steps.existing.outputs.found != 'true'
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      # Without upstream's Turbo cache token, the Dockerfile's secret mount is
+      # simply empty and everything is built.
+      - name: Build and push
+        if: steps.existing.outputs.found != 'true'
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          push: true
+          # The Dockerfile's last stage, `dist`, is an empty image holding only
+          # the frontend build. The app is the `build` stage.
+          target: build
+          tags: ${{ steps.image.outputs.value }}
+          cache-from: type=registry,ref=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:buildcache
+          cache-to: type=registry,ref=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:buildcache,mode=max
+
+  migrate:
+    needs: build
+    # A rollback keeps the database as it is (see the top of this file).
+    if: ${{ !inputs.ref }}
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 30
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      # The task template and settings of the commit being deployed.
+      - name: Check out repository code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.build.outputs.sha }}
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Run the migrations
+        env:
+          IMAGE: ${{ needs.build.outputs.image }}
+          ECS_WEB_SERVICE: ${{ vars.ECS_WEB_SERVICE }}
+        run: |
+          set -euo pipefail
+
+          self-host/aws/render-task-definition.sh self-host/aws/tasks/argos-migrate.json "$IMAGE" \
+            > "$RUNNER_TEMP/argos-migrate.json"
+          TASK_DEF_ARN=$(aws ecs register-task-definition \
+            --cli-input-json "file://$RUNNER_TEMP/argos-migrate.json" \
+            --query 'taskDefinition.taskDefinitionArn' \
+            --output text)
+
+          # The migrations run in the web service's network, which can reach
+          # the database.
+          NETWORK=$(aws ecs describe-services \
+            --cluster "$ECS_CLUSTER" \
+            --services "$ECS_WEB_SERVICE" \
+            --query 'services[0].networkConfiguration.awsvpcConfiguration' \
+            --output json)
+          SUBNETS=$(jq -r '.subnets | join(",")' <<<"$NETWORK")
+          SECURITY_GROUPS=$(jq -r '.securityGroups | join(",")' <<<"$NETWORK")
+          ASSIGN_PUBLIC_IP=$(jq -r '.assignPublicIp' <<<"$NETWORK")
+
+          TASK_ARN=$(aws ecs run-task \
+            --cluster "$ECS_CLUSTER" \
+            --task-definition "$TASK_DEF_ARN" \
+            --launch-type FARGATE \
+            --network-configuration "awsvpcConfiguration={subnets=[$SUBNETS],securityGroups=[$SECURITY_GROUPS],assignPublicIp=$ASSIGN_PUBLIC_IP}" \
+            --started-by "github-deploy-${GITHUB_RUN_ID}" \
+            --query 'tasks[0].taskArn' \
+            --output text)
+
+          # ECS forgets a stopped task about an hour later, so name its logs now.
+          echo "Task: $TASK_ARN (log stream ecs/argos-migrate/${TASK_ARN##*/} in /ecs/argos-migrate)"
+
+          aws ecs wait tasks-stopped --cluster "$ECS_CLUSTER" --tasks "$TASK_ARN"
+
+          TASK=$(aws ecs describe-tasks --cluster "$ECS_CLUSTER" --tasks "$TASK_ARN" --output json)
+          # No exit code at all means the container never started; the reasons
+          # below say why, the logs won't.
+          EXIT_CODE=$(jq -r '.tasks[0].containers[0].exitCode // "none"' <<<"$TASK")
+          if [ "$EXIT_CODE" != "0" ]; then
+            echo "::error::The migration task failed (exit code: $EXIT_CODE). Nothing was deployed."
+            jq -r '.tasks[0] | "Stopped reason: \(.stoppedReason // "-")", "Container reason: \(.containers[0].reason // "-")"' <<<"$TASK"
+            exit 1
+          fi
+
+  deploy:
+    needs: [build, migrate]
+    # After the migrations, or without them for a rollback; never after they
+    # failed.
+    if: ${{ !cancelled() && needs.build.result == 'success' && (needs.migrate.result == 'success' || needs.migrate.result == 'skipped') }}
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 30
+    permissions:
+      id-token: write
+      contents: read
+    strategy:
+      # Both services roll independently: one failing must not cancel the
+      # other halfway through.
+      fail-fast: false
+      matrix:
+        include:
+          - template: argos-web
+            service: ${{ vars.ECS_WEB_SERVICE }}
+          - template: argos-worker
+            service: ${{ vars.ECS_WORKER_SERVICE }}
+
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.build.outputs.sha }}
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Fill in the task definition
+        id: task-def
+        env:
+          IMAGE: ${{ needs.build.outputs.image }}
+          TEMPLATE: ${{ matrix.template }}
+        run: |
+          self-host/aws/render-task-definition.sh "self-host/aws/tasks/$TEMPLATE.json" "$IMAGE" \
+            > "$RUNNER_TEMP/$TEMPLATE.json"
+          echo "file=$RUNNER_TEMP/$TEMPLATE.json" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy ${{ matrix.template }}
+        uses: aws-actions/amazon-ecs-deploy-task-definition@c465972ecbd160473f22e683363b422a5412a3de # v2.6.3
+        with:
+          task-definition: ${{ steps.task-def.outputs.file }}
+          service: ${{ matrix.service }}
+          cluster: ${{ env.ECS_CLUSTER }}
+          wait-for-service-stability: true

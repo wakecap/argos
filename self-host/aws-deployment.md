@@ -19,7 +19,7 @@ This document asks for two things:
 - [ ] DNS names and a certificate ([section 2](#2-aws-resources))
 - [ ] Secrets in SSM Parameter Store ([section 4](#4-configuration))
 - [ ] Database schema loaded once ([section 5](#5-first-time-setup))
-- [ ] GitHub deploy role and the values for the workflow ([section 6](#6-cicd-deploy-every-merge-without-devops))
+- [ ] GitHub deploy role, and the values in the repository's `production` environment ([section 6](#6-cicd-deploy-every-merge-without-devops))
 - [ ] Answers to the [open questions](#8-open-questions)
 
 ## 1. How it runs
@@ -175,18 +175,31 @@ local MinIO), and every `STRIPE_*`, `GOOGLE_*`, `GITLAB_*`, `SLACK_*`, `GITHUB_L
 **The goal:** a merge to `main` in `wakecap/argos` reaches production by itself. You are involved only in
 infrastructure changes: a new secret, a new resource, sizing.
 
-**The pipeline** (`.github/workflows/deploy.yml`, which we write, based on upstream's `release.yml`):
+**The pipeline** is [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml), based on upstream's
+`release.yml`:
 
-1. Build the image (`docker build --target build`) and push it to ECR, tagged with the commit SHA.
-2. Run the **migrate** task and wait for it. Stop here if it fails.
-3. Register new task definition revisions for **web** and **worker** with the new image, update both services, and
+1. **Build** the image (`docker build --target build`) and push it to ECR, tagged with the commit SHA. An image that
+   is already there is not rebuilt.
+2. **Migrate:** run the migrate task in the web service's network and wait for it. If it fails, nothing is deployed.
+3. **Deploy:** register new task definition revisions for web and worker with the new image, update both services and
    wait until they are stable.
-4. A manual run with an older commit SHA redeploys that image: that's the rollback.
+4. **Rollback:** run the workflow by hand (Actions → Deploy → Run workflow) with an older commit. Its image is reused
+   and the migrations are skipped: the database stays as it is. Undoing a migration is a manual step.
 
-Upstream keeps the ECS task definitions as templates in the repository (`aws/tasks/*.json`), and the workflow fills
-in the image, the plain settings and the SSM parameter names. We propose the same: adding a setting is then a PR,
-and adding a secret is you creating the parameter plus a PR from us. If you'd rather own the task definitions in
-your infrastructure code, the workflow can swap only the image instead. See the [open questions](#8-open-questions).
+**What lives where:**
+
+| What                                   | Where                                                              | Who changes it |
+| -------------------------------------- | ------------------------------------------------------------------ | -------------- |
+| Task definitions (size, command, port) | [`aws/tasks/*.json`](aws/tasks) in this folder                     | Us, by PR      |
+| Plain settings                         | [`aws/production.env`](aws/production.env). Public: never a secret | Us, by PR      |
+| Which secrets a task reads             | [`aws/production.secrets`](aws/production.secrets), names only     | Us, by PR      |
+| Secret values                          | SSM Parameter Store, `<SSM_PREFIX><name in lower case>`            | You            |
+| AWS identifiers the workflow needs     | GitHub, the repository's `production` environment                  | You, once      |
+
+So adding a plain setting is a PR, and adding a secret is you creating the parameter plus a PR naming it. The deploy
+stops while `production.env` still holds a `<placeholder>` (the bucket, region, App slug and contact address today).
+If you'd rather own the task definitions in your infrastructure code, the workflow can be changed to swap only the
+image. See the [open questions](#8-open-questions).
 
 **What we need from you:**
 
@@ -213,29 +226,38 @@ your infrastructure code, the workflow can swap only the image instead. See the 
    ```
 
 3. **Its permissions,** nothing more:
-   - ECR: push and pull on the `argos` repository (`ecr:GetAuthorizationToken`, `ecr:BatchCheckLayerAvailability`,
-     `ecr:InitiateLayerUpload`, `ecr:UploadLayerPart`, `ecr:CompleteLayerUpload`, `ecr:PutImage`,
-     `ecr:BatchGetImage`, `ecr:GetDownloadUrlForLayer`)
+   - ECR, on the `argos` repository: `ecr:BatchCheckLayerAvailability`, `ecr:InitiateLayerUpload`,
+     `ecr:UploadLayerPart`, `ecr:CompleteLayerUpload`, `ecr:PutImage`, `ecr:BatchGetImage`,
+     `ecr:GetDownloadUrlForLayer` and `ecr:DescribeImages`; plus `ecr:GetAuthorizationToken`, which takes no resource
    - ECS: `ecs:RegisterTaskDefinition`, `ecs:DescribeTaskDefinition`, `ecs:RunTask`, `ecs:DescribeTasks`,
      `ecs:UpdateService` and `ecs:DescribeServices` on our cluster and services
    - `iam:PassRole` on the task role and the task execution role
-4. **These values,** stored in the repository's `production` environment:
-   - `AWS_REGION`
-   - `AWS_DEPLOY_ROLE_ARN`, as an environment secret
-   - `ECR_REPOSITORY`
-   - `ECS_CLUSTER`, `ECS_WEB_SERVICE`, `ECS_WORKER_SERVICE`
-   - `ECS_TASK_ROLE_ARN`, `ECS_TASK_EXECUTION_ROLE_ARN`
-   - the SSM prefix
-   - the subnets and security group for the migrate task. Upstream's pipeline reads them from the web service, which
-     also works.
+4. **These values,** in the repository's `production` environment (Settings → Environments):
+
+   | Name                          | Kind     | Example                                           |
+   | ----------------------------- | -------- | ------------------------------------------------- |
+   | `AWS_DEPLOY_ROLE_ARN`         | Secret   | `arn:aws:iam::<account>:role/argos-github-deploy` |
+   | `AWS_REGION`                  | Variable | `eu-west-1`                                       |
+   | `ECR_REPOSITORY`              | Variable | `argos`                                           |
+   | `ECS_CLUSTER`                 | Variable | `argos`                                           |
+   | `ECS_WEB_SERVICE`             | Variable | `argos-web`                                       |
+   | `ECS_WORKER_SERVICE`          | Variable | `argos-worker`                                    |
+   | `ECS_TASK_ROLE_ARN`           | Variable | The task role (web, worker)                       |
+   | `ECS_TASK_EXECUTION_ROLE_ARN` | Variable | The task execution role                           |
+   | `SSM_PREFIX`                  | Variable | `/argos/production/`, with the trailing slash     |
+
+   The migrate task's subnets and security groups are read from the web service.
 
 **On our side,** before the first deploy:
 
-- **Turn on GitHub Actions for the fork.** It is off today.
-- **Remove upstream's workflows.** `release.yml` deploys to Argos's own AWS account on every push to `main`, and
-  `infra.yml` deploys their CDK stacks. Both would fail here without their secrets. Their `ci.yml` can stay as our
-  checks.
-- **Write `deploy.yml`** and the task templates with our settings, then do the first deploy together with you.
+- **Turn on GitHub Actions for the fork** (it is off today), then **disable upstream's `Release` and `Infra`
+  workflows** in the Actions tab. `release.yml` deploys to Argos's own AWS account on every push to `main`, and
+  `infra.yml` their CDK stacks; both would only fail here. Disabling them in GitHub rather than deleting them keeps
+  upstream's files untouched, so merging upstream updates stays easy. Their `CI` workflow can stay as our checks.
+- **Limit the `production` environment to the `main` branch** (Settings → Environments → production → Deployment
+  branches).
+- **Fill in the placeholders** in `aws/production.env` once you've answered the open questions, then do the first
+  deploy together.
 
 ## 7. Running it
 
