@@ -104,6 +104,10 @@ services:
     env_file: .env
     ports:
       - "4002:4002"
+    networks:
+      default:
+        # Argos takes webhooks only on a host whose first label is `api`.
+        aliases: [api.argos.internal]
     depends_on: &app-deps
       postgres:
         condition: service_healthy
@@ -131,6 +135,21 @@ services:
     command: ["sh", "-c", "cd apps/backend && exec ./bin/start.sh worker"]
     env_file: .env
     depends_on: *app-deps
+
+  # Forwards GitHub's webhooks from a smee.io channel to the web service, for a
+  # machine GitHub can't reach. Only with `--profile github`; on AWS, GitHub
+  # calls the API host directly.
+  smee:
+    image: node:26-bookworm-slim
+    profiles: [github]
+    command:
+      - sh
+      - -c
+      - exec npx --yes smee-client@5.0.0 --url "$$SMEE_URL" --target http://api.argos.internal:4002/github/event-handler
+    env_file: .env
+    depends_on:
+      web:
+        condition: service_healthy
 
 secrets:
   # Only Argos's own CI has a Turbo remote-cache token; an empty one builds everything.
