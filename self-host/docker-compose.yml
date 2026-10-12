@@ -1,0 +1,143 @@
+# Self-hosted Argos on one machine, for trying it out.
+#
+# Ports are offset from the defaults (55432, 5673, 6381, 9100) so this runs next to
+# other local stacks. In production these services are managed AWS ones instead:
+# see self-host/README.md.
+
+name: argos-selfhost
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      - POSTGRES_HOST_AUTH_METHOD=trust
+      - POSTGRES_DB=argos
+    ports:
+      - "55432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/18/docker
+      # Loaded once, when the volume is empty. Later schema changes come from `migrate`.
+      - ../apps/backend/db/structure.sql:/docker-entrypoint-initdb.d/10-structure.sql:ro
+    healthcheck:
+      # Over TCP: during first-start init, Postgres only listens on its socket.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres -d argos"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  rabbitmq:
+    image: rabbitmq:4.2-alpine
+    ports:
+      - "5673:5672"
+      - "15673:15672"
+    volumes:
+      - "../rabbitmq/enabled_plugins:/etc/rabbitmq/enabled_plugins"
+    healthcheck:
+      test: ["CMD-SHELL", "rabbitmq-diagnostics -q ping"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+
+  redis:
+    image: redis:6-alpine
+    command: redis-server --appendonly yes
+    ports:
+      - "6381:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # S3-compatible storage for the screenshots. On AWS, use a real S3 bucket instead.
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      - MINIO_ROOT_USER=argos
+      - MINIO_ROOT_PASSWORD=argos-local-only
+    ports:
+      - "9100:9000"
+      - "9101:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "curl -fs http://localhost:9000/minio/health/live || exit 1",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 argos argos-local-only &&
+      mc mb --ignore-existing local/argos-screenshots
+      "
+
+  # Applies any migrations newer than structure.sql, then exits.
+  migrate:
+    image: argos-selfhost:local
+    command: ["sh", "-c", "cd apps/backend && npx knex migrate:latest"]
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # The Argos app and API (one process, routed by subdomain).
+  web:
+    image: argos-selfhost:local
+    build:
+      context: ..
+      target: build
+      secrets: [TURBO_TOKEN]
+    command: ["sh", "-c", "cd apps/backend && exec ./bin/start.sh web"]
+    env_file: .env
+    ports:
+      - "4002:4002"
+    depends_on: &app-deps
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          'node -e "fetch(''http://localhost:4002/health'').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"',
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # Background jobs: screenshot diffs, build status, notifications.
+  worker:
+    image: argos-selfhost:local
+    command: ["sh", "-c", "cd apps/backend && exec ./bin/start.sh worker"]
+    env_file: .env
+    depends_on: *app-deps
+
+secrets:
+  # Only Argos's own CI has a Turbo remote-cache token; an empty one builds everything.
+  TURBO_TOKEN:
+    environment: ARGOS_TURBO_TOKEN
+
+volumes:
+  pg_data:
+  redis_data:
+  minio_data:
