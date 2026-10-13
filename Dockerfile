@@ -39,3 +39,8 @@ RUN pnpm install --prod
 # .github/workflows/release.yml.
 FROM scratch AS dist
 COPY --from=build /app/apps/frontend/dist /
+
+# Default target for wakecap/actions build-image, which has no `target` input:
+# the app image. Upstream workflows pass `target: build` / `target: dist`
+# explicitly (release.yml:87,105), so this stage changes only the default.
+FROM build AS runtime
