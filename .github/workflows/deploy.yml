@@ -10,6 +10,12 @@ name: Deploy
 #                   safety, auto-merge, apply: the migrate Job runs first,
 #                   then web and worker roll.
 #
+# The steps are the ones wakecap/actions build-image and dispatch-deploy run,
+# written out with public actions: wakecap/actions is an internal repository,
+# and GitHub does not let a public repository use actions from one (first run:
+# "Unable to resolve action `wakecap/actions`, not found"). Keep the tag scheme
+# (production-<date>-<sha7>) and the dispatch payload in step with them.
+#
 # The cluster side (settings, secrets, sizing) lives in that Terraform layer,
 # not here. This repository holds no AWS deploy role: the only AWS credential
 # CI uses is the org-wide ECR push role, and the dispatch token is minted from
@@ -58,7 +64,10 @@ jobs:
       id-token: write
       contents: read
     outputs:
-      image: ${{ steps.build.outputs.image-uri }}
+      image: ${{ steps.tag.outputs.image }}
+    env:
+      REGISTRY: 582053393120.dkr.ecr.us-west-2.amazonaws.com
+      REPOSITORY: wakecap/argos
 
     steps:
       - name: Check out repository code
@@ -66,45 +75,78 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.sha }}
 
-      # Builds the Dockerfile's default (last) stage, `runtime`, which is the
-      # app image. The image is X86_64, which the EKS node selector expects.
-      - name: Build and push
-        id: build
-        uses: wakecap/actions/build-image@build-image/v0.1
+      # Same scheme as wakecap/actions build-image: <env>-<UTC date>-<sha7>.
+      # The ECR lifecycle rule keeps the last 10 `production-` images.
+      - name: Name the image
+        id: tag
+        run: |
+          SHORT_SHA="$(git rev-parse HEAD | cut -c1-7)"
+          echo "image=${REGISTRY}/${REPOSITORY}:production-$(date -u +%Y%m%d)-${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+
+      # The org-wide ECR push role; it trusts every wakecap/* repository.
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
         with:
-          service: wakecap/argos
-          environment: production
-          push-latest: "false"
+          role-to-assume: arn:aws:iam::582053393120:role/github-actions-ecr-push
+          aws-region: us-west-2
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@d539f0932e70871a027e9d5a9d8fc38589180a64 # v2.1.6
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      # Builds the Dockerfile's last stage, `runtime`, which is the app image.
+      # ubuntu-latest is X86_64, which the EKS node selector expects.
+      - name: Build and push
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          push: true
+          provenance: false
+          tags: ${{ steps.tag.outputs.image }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
   dispatch:
     needs: build
     runs-on: ubuntu-latest
     environment: production
     timeout-minutes: 15
-    # No id-token: dispatch-deploy mints a GitHub App token, not OIDC.
+    # No id-token: the dispatch uses a GitHub App token, not OIDC.
     permissions:
       contents: read
 
     steps:
-      - name: Choose the variables to bump
-        id: images
+      - name: Mint a token for wakecap/infrastructure
+        id: app-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          app-id: ${{ secrets.CI_APP_ID }}
+          private-key: ${{ secrets.CI_APP_PRIVATE_KEY }}
+          owner: wakecap
+          repositories: infrastructure
+
+      # Same payload as wakecap/actions dispatch-deploy (grouped images mode).
+      # A rollback bumps only argos_image, so the migrate Job does not rerun.
+      - name: Dispatch the deploy
         env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
           IMAGE: ${{ needs.build.outputs.image }}
           ROLLBACK: ${{ inputs.ref != '' && inputs.ref != null }}
         run: |
+          set -euo pipefail
           if [ "$ROLLBACK" = "true" ]; then
-            # A rollback keeps the migrate image, so the Job does not rerun.
-            jq -cn --arg i "$IMAGE" '{argos_image: $i}' > images.json
+            IMAGES=$(jq -cn --arg i "$IMAGE" '{argos_image: $i}')
           else
-            jq -cn --arg i "$IMAGE" '{argos_image: $i, argos_migrate_image: $i}' > images.json
+            IMAGES=$(jq -cn --arg i "$IMAGE" '{argos_image: $i, argos_migrate_image: $i}')
           fi
-          echo "value=$(cat images.json)" >> "$GITHUB_OUTPUT"
-
-      - name: Dispatch the deploy
-        uses: wakecap/actions/dispatch-deploy@dispatch-deploy/v0.1
-        with:
-          layer: aws/wakecap-main/us-east-2/prod/argos
-          images: ${{ steps.images.outputs.value }}
-          dispatch-app-id: ${{ secrets.CI_APP_ID }}
-          dispatch-app-key: ${{ secrets.CI_APP_PRIVATE_KEY }}
-          verify-pr: "true"
+          jq -nc \
+            --arg layer "aws/wakecap-main/us-east-2/prod/argos" \
+            --argjson imgs "$IMAGES" \
+            --arg did "$(uuidgen | tr '[:upper:]' '[:lower:]')" \
+            '{event_type: "deploy-image", client_payload: {layer: $layer, images: $imgs, dispatch_id: $did}}' \
+            > payload.json
+          cat payload.json
+          gh api -X POST repos/wakecap/infrastructure/dispatches --input payload.json
+          echo "Dispatched. The deploy PR opens on branch deploy/aws/wakecap-main/us-east-2/prod/argos in wakecap/infrastructure."
