@@ -195,5 +195,6 @@ worker roll). The cluster's settings, secrets and sizing live in that Terraform 
 repository variable `DEPLOY_ENABLED` switches the deploy on and off.
 
 [aws-deployment.md](aws-deployment.md) is the first plan, written for ECS before the EKS lane existed. Its reasoning
-still holds — the resources, who has to reach what, the first-time database setup — but not its ECS pipeline, and
-`aws/production.env` and `aws/render-task-definition.sh` belong to that plan, not to the running deployment.
+still holds — the resources, who has to reach what, the first-time database setup — but not its ECS pipeline. Its
+files (`self-host/aws/`) and upstream's `release.yml`, which deployed to an ECS cluster that doesn't exist here, are
+gone: nothing used them.

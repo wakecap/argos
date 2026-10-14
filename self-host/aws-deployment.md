@@ -5,7 +5,8 @@
 > [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml). Its settings, secrets and sizing live in
 > `terraform/aws/wakecap-main/us-east-2/prod/argos/` in `wakecap/infrastructure`. The addresses are
 > `app.argos.wakecap.ai` and `api.argos.wakecap.ai`, not the `.com` names below. Kept for its reasoning: the
-> resources, who has to reach what, and the first-time setup.
+> resources, who has to reach what, and the first-time setup. The ECS files it names (`self-host/aws/`) and upstream's
+> `release.yml` have since been removed: nothing used them.
 
 **For:** Ruslan (DevOps). **From:** Hamed (frontend). **Status:** works end to end locally, see [README.md](README.md).
 
@@ -50,7 +51,7 @@ One Docker image, run three ways:
 
 This mirrors how Argos runs its own production: ECS Fargate, RDS, Amazon MQ, Redis and S3. Their ECS task templates
 are in [`aws/tasks/`](../aws/tasks) and their deploy pipeline in
-[`.github/workflows/release.yml`](../.github/workflows/release.yml); ours will be based on both.
+`.github/workflows/release.yml`; ours will be based on both.
 
 ## 2. AWS resources
 
@@ -195,13 +196,13 @@ infrastructure changes: a new secret, a new resource, sizing.
 
 **What lives where:**
 
-| What                                   | Where                                                              | Who changes it |
-| -------------------------------------- | ------------------------------------------------------------------ | -------------- |
-| Task definitions (size, command, port) | [`aws/tasks/*.json`](aws/tasks) in this folder                     | Us, by PR      |
-| Plain settings                         | [`aws/production.env`](aws/production.env). Public: never a secret | Us, by PR      |
-| Which secrets a task reads             | [`aws/production.secrets`](aws/production.secrets), names only     | Us, by PR      |
-| Secret values                          | SSM Parameter Store, `<SSM_PREFIX><name in lower case>`            | You            |
-| AWS identifiers the workflow needs     | GitHub, the repository's `production` environment                  | You, once      |
+| What                                   | Where                                                   | Who changes it |
+| -------------------------------------- | ------------------------------------------------------- | -------------- |
+| Task definitions (size, command, port) | `aws/tasks/*.json` in this folder                       | Us, by PR      |
+| Plain settings                         | `aws/production.env`. Public: never a secret            | Us, by PR      |
+| Which secrets a task reads             | `aws/production.secrets`, names only                    | Us, by PR      |
+| Secret values                          | SSM Parameter Store, `<SSM_PREFIX><name in lower case>` | You            |
+| AWS identifiers the workflow needs     | GitHub, the repository's `production` environment       | You, once      |
 
 So adding a plain setting is a PR, and adding a secret is you creating the parameter plus a PR naming it. The deploy
 stops while `production.env` still holds a `<placeholder>` (the bucket, region, App slug and contact address today).
