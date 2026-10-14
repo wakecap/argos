@@ -4,13 +4,21 @@ WakeCap runs this fork of [argos-ci/argos](https://github.com/argos-ci/argos) on
 Argos subscription, as the visual review step for Wakecore's Storybook (the job Chromatic used to do).
 
 Upstream does not support or document self-hosting. This folder is what it took to make it work, what still does
-not, and how to run it on AWS.
+not, and how to run it.
+
+**Live** at <https://app.argos.wakecap.ai> (API: `https://api.argos.wakecap.ai`) since 2026-10-13, on WakeCap's AWS.
+To send a repository's screenshots to it, see [Connect a repository](#connect-a-repository).
 
 Forked from upstream `0894b0c` (2026-10-07). Keep the changes small so the fork can be rebased onto upstream.
 
 ## Status
 
-Tried locally on 2026-10-12 with 30 real Wakecore stories, and a GitHub App installed on a sandbox repository
+**Production** (2026-10-13): running on WakeCap's EKS in us-east-2, deployed by DevOps through the house deploy lane
+(see [Deploying](#deploying)). Tested end to end there: an upload, S3 storage, a diff (1 changed, 1 unchanged), and
+signing in with GitHub and with Google. Screenshots are kept with no expiry, because a baseline stays in use for
+months.
+
+**Local trial** (2026-10-12), with 30 real Wakecore stories and a GitHub App installed on a sandbox repository
 (`wakecap/argos-sandbox`):
 
 | Step                                                                            | Result                                                                                                      |
@@ -75,7 +83,7 @@ The first build takes about 5 minutes and makes a 3.6 GB image. On first start, 
    The first build on `main` becomes the baseline. Builds on other branches are compared with it.
 
 Why `api.localtest.me` and not `api.localhost`: the CLI rejects an API address whose last part is longer than six
-letters. `localtest.me` is a public name that points back to your machine. A real domain (`api.argos.wakecap.com`)
+letters. `localtest.me` is a public name that points back to your machine. A real domain (`api.argos.wakecap.ai`)
 has no such problem.
 
 MinIO's console is at <http://localhost:9101> (user `argos`, password `argos-local-only`).
@@ -92,17 +100,17 @@ required check in branch protection blocks the merge, as Chromatic did. One App 
 "light" App is not needed.
 
 **Create it** in the organisation: Settings → Developer settings → GitHub Apps → New GitHub App. Use one App per
-environment: the URLs differ, and production keys should not live on a laptop.
+environment: the URLs differ, and production keys should not live on a laptop. Production's is `wakecap-argos`.
 
-| Field                                                  | Locally                                                                                | On AWS                                               |
-| ------------------------------------------------------ | -------------------------------------------------------------------------------------- | ---------------------------------------------------- |
-| Redirect URI                                           | `http://app.argos.localhost:4002/auth/github/callback`                                 | `https://app.argos.wakecap.com/auth/github/callback` |
-| Expire user authorization tokens                       | **Off.** Argos keeps no refresh token, so an expired one breaks importing repositories | Off                                                  |
-| Request user authorization (OAuth) during installation | **On.** Argos has no setup page; it expects to be sent back to the redirect URI        | On                                                   |
-| Setup URL, Device Flow, Redirect on update             | Empty / off                                                                            | Empty / off                                          |
-| Webhook URL                                            | A smee.io channel (below)                                                              | `https://api.argos.wakecap.com/github/event-handler` |
-| Webhook secret                                         | `openssl rand -hex 32`, also set as `GITHUB_WEBHOOK_SECRET`                            | Same                                                 |
-| Where can it be installed                              | Only on this account                                                                   | Only on this account                                 |
+| Field                                                  | Locally                                                                                | On AWS                                              |
+| ------------------------------------------------------ | -------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| Redirect URI                                           | `http://app.argos.localhost:4002/auth/github/callback`                                 | `https://app.argos.wakecap.ai/auth/github/callback` |
+| Expire user authorization tokens                       | **Off.** Argos keeps no refresh token, so an expired one breaks importing repositories | Off                                                 |
+| Request user authorization (OAuth) during installation | **On.** Argos has no setup page; it expects to be sent back to the redirect URI        | On                                                  |
+| Setup URL, Device Flow, Redirect on update             | Empty / off                                                                            | Empty / off                                         |
+| Webhook URL                                            | A smee.io channel (below)                                                              | `https://api.argos.wakecap.ai/github/event-handler` |
+| Webhook secret                                         | `openssl rand -hex 32`, also set as `GITHUB_WEBHOOK_SECRET`                            | Same                                                |
+| Where can it be installed                              | Only on this account                                                                   | Only on this account                                |
 
 Permissions:
 
@@ -138,27 +146,54 @@ deliveries.
 repositories**, and pick the repositories. Argos then lists them for import. Prefer selected repositories to "All
 repositories": Argos ignores the event for a newly created repository, so one created later may never show up.
 
+## Connect a repository
+
+On production, for a repository whose CI should send screenshots:
+
+1. Sign in at <https://app.argos.wakecap.ai> with GitHub or Google (allowed addresses only).
+2. **New Project → Continue with GitHub**, and pick the repository. That installs the `wakecap-argos` GitHub App on
+   it, which posts the `argos` check and a comment on each PR. A project created without GitHub can't post them.
+3. Copy the project's token into the repository's CI secrets as `ARGOS_TOKEN`.
+4. In CI, also set `ARGOS_API_BASE_URL=https://api.argos.wakecap.ai/v2/`. Without it the Argos SDKs and CLI upload to
+   argos-ci.com instead of ours.
+5. Make the branch that PRs target the project's default branch: its builds are the baseline the others are compared
+   with.
+
+### How Wakecore uses it
+
+[wakecap/Wakecore#443](https://github.com/wakecap/Wakecore/pull/443) replaced Visual Regression Tracker with this
+Argos. There's no separate workflow: `@argos-ci/storybook`'s Vitest plugin screenshots each story after its test, in
+the Story tests jobs that already run every story, and both test shards upload one build. Wakecore's own wrapper
+(`apps/storybook/.storybook/argos.ts`) skips stories tagged `no-visual`, shoots each story left to right and right to
+left (Argos modes on the `direction` global), and shoots the whole page at 1280×720. Argos's default crop to the
+story's content misses portalled dialogs and popovers. The project's default (baseline) branch is `develop`.
+
 ## Next work
 
 In rough order of need:
 
 1. **Email.** Only Resend is supported, and the sender address is hard-coded to `contact@argos-ci.com`. Either set
-   up Resend for a WakeCap domain, or add SMTP so we can use Amazon SES. Without email, nobody gets sign-in codes,
-   so until then sign-in has to be GitHub.
+   up Resend for a WakeCap domain, or add SMTP so we can use Amazon SES. Without email, nobody gets sign-in codes or
+   notifications; sign-in is GitHub or Google until then.
 2. **Upstream leftovers.** `SELF_HOSTED` hides most of them. Still showing: the "How did you hear about us?" question
    after signing up, Argos's footer, terms and sender address in emails (fix with email), and links to argos-ci.com's
    documentation, which stay because the docs are accurate for us too. Set `CONTACT_EMAIL` so "contact us" links
    reach your own admins.
-3. **Wakecore.** Change `apps/storybook/scripts/vrt-capture.mjs` to write the screenshots to a folder and upload
-   them with `@argos-ci/cli upload` instead of sending them to Visual Regression Tracker.
-4. **Image size.** 3.6 GB. A slimmer final stage (only `dist`, production dependencies, and the frontend build) would
+3. **Image size.** 3.6 GB. A slimmer final stage (only `dist`, production dependencies, and the frontend build) would
    cut it a lot.
 
 Not needed and not set up: Deployments (Argos hosting Storybook builds; it needs DynamoDB and CloudFront), Slack,
 Stripe, Sentry, Discord.
 
-## AWS deployment (for DevOps)
+## Deploying
 
-Everything needed to run it on AWS, and the GitHub Actions pipeline that deploys every merge to `main`, is in
-[aws-deployment.md](aws-deployment.md): the resources and their sizes, the settings and secrets, the first-time setup
-and the deploy role.
+A merge to `main` deploys itself, through WakeCap's house deploy lane
+([`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml)): it builds the image, pushes it to ECR, and
+dispatches to `wakecap/infrastructure`, where a bot PR bumps the image in
+`terraform/aws/wakecap-main/us-east-2/prod/argos/`, is checked, merged and applied (the migrate Job first, then web and
+worker roll). The cluster's settings, secrets and sizing live in that Terraform layer, not in this repository. The
+repository variable `DEPLOY_ENABLED` switches the deploy on and off.
+
+[aws-deployment.md](aws-deployment.md) is the first plan, written for ECS before the EKS lane existed. Its reasoning
+still holds — the resources, who has to reach what, the first-time database setup — but not its ECS pipeline, and
+`aws/production.env` and `aws/render-task-definition.sh` belong to that plan, not to the running deployment.

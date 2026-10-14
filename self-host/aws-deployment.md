@@ -1,5 +1,12 @@
 # Argos on AWS: what DevOps needs to set up
 
+> **Superseded (2026-10-13).** Argos went live on WakeCap's EKS in us-east-2, through the house deploy lane, not on
+> the ECS setup this document proposes: see [Deploying](README.md#deploying) and
+> [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml). Its settings, secrets and sizing live in
+> `terraform/aws/wakecap-main/us-east-2/prod/argos/` in `wakecap/infrastructure`. The addresses are
+> `app.argos.wakecap.ai` and `api.argos.wakecap.ai`, not the `.com` names below. Kept for its reasoning: the
+> resources, who has to reach what, and the first-time setup.
+
 **For:** Ruslan (DevOps). **From:** Hamed (frontend). **Status:** works end to end locally, see [README.md](README.md).
 
 Argos replaces Chromatic as the visual review for Wakecore's Storybook. CI uploads screenshots of every story; Argos
