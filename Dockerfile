@@ -35,12 +35,12 @@ RUN pnpm install --prod
 #
 # CAUTION: this is the last stage, which makes it the *default* build target.
 # The image build has to pass `--target build` explicitly or it will produce
-# this empty scratch image instead of the app. See `target: build` in
-# .github/workflows/release.yml.
+# this empty scratch image instead of the app. Upstream's release workflow
+# (.github/workflows/release.yml, removed from this fork) passes `target: build`.
 FROM scratch AS dist
 COPY --from=build /app/apps/frontend/dist /
 
 # Default target for wakecap/actions build-image, which has no `target` input:
-# the app image. Upstream workflows pass `target: build` / `target: dist`
-# explicitly (release.yml:87,105), so this stage changes only the default.
+# the app image. Upstream's release workflow passes `target: build` /
+# `target: dist` explicitly, so this stage changes only the default.
 FROM build AS runtime
