@@ -76,7 +76,7 @@
     "free-email-domains": "^1.12.13",
     "google-auth-library": "^11.1.0",
     "graphql": "16.14.2",
-    "graphql-scalars": "^2.0.0",
+    "graphql-scalars": "^2.0.1",
     "graphql-tag": "^2.12.7",
     "graphql-ws": "^6.3.0",
     "happy-dom": "^20.14.5",
